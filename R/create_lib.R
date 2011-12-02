@@ -1,6 +1,6 @@
 ###create the CNVtools2 library
 
-base <- '/ugi/home/shared/vincent/libraries/R/working/CNVtools'
+base  <- '/ugi/home/shared/vincent/libraries/R/working/CNVtools'
 
 package.skeleton(name="CNVtools",
                  code_files = c('R/CNVtools_class.R', 'R/model_fitting.R'),

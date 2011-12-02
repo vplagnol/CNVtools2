@@ -3,19 +3,18 @@ source('R/model_fitting.R')
 
 
 setClass("CNVtools",
-         representation(signal = "numeric",
+         representation(ncomp = 'numeric',
+                        nprobes = 'numeric',
+                        nsamples = 'numeric',
+                        signal = "numeric",
                         trait = 'numeric',
-                        batch = 'factor',
-                        ncomp = 'numeric',
+                        batch = 'factor',                      
                         IID = 'character',
                         FID = 'factor',
                         f.member = 'numeric',
                         covariates = 'data.frame',
                         expanded.covariates = 'data.frame',  ## the matrix expanded for each copy number
-                        frame.fitting = 'matrix',  ## the large matrix used to fit the data
                         multiprobe.signal = 'matrix',
-                        nprobes = 'numeric',
-                        nsamples = 'numeric',
                         cn.calls = "numeric",
                         model.association = "formula",
                         model.mean = "formula",
@@ -25,8 +24,6 @@ setClass("CNVtools",
                         design.matrix.var = 'matrix',
                         strata.mean = 'integer',
                         strata.var = 'integer',
-                        family = 'numeric',
-                        parent.offspring = 'numeric',
                         binary.trait = 'logical',
                         best.fit.H0 = 'data.frame',
                         mle.H0 = 'list',
@@ -184,6 +181,13 @@ setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
   pca <- prcomp(.Object@multiprobe.signal, scale = TRUE)$x[,1]
   pca <- pca/sd(pca)
   if (cor(pca, .Object@signal) < 0) .Object@signal <- - pca else .Object@signal <- pca
+
+  ######### clear the previously fitted objects that are not relevant anymore
+  .Object@mle.H0 <- list()
+  .Object@mle.H1 <- list()
+  .Object@best.fit.H0 <- data.frame()
+  .Object@best.fit.H1 <- data.frame()
+  
   return(.Object)
 })
 

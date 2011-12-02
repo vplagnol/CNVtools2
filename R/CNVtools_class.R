@@ -147,7 +147,7 @@ setGeneric("TDT" ,function(.Object){standardGeneric("TDT")})
 
 setMethod("TDT", "CNVtools", function(.Object) {  ##Intensity based TDT test
 
-  small.cov <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member)
+  small.cov <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member, status = .Object@trait)
 
   
   fathers <- subset(small.cov[, c('FID', 'signal')], small.cov$f.member == 1)
@@ -160,7 +160,7 @@ setMethod("TDT", "CNVtools", function(.Object) {  ##Intensity based TDT test
   
   small.cov <- merge( small.cov, fathers, by = 'FID', all.x = TRUE)
   small.cov <- merge( small.cov, mothers, by = 'FID', all.x = TRUE)
-  small.cov <- subset(small.cov, f.member >= 3)
+  small.cov <- subset(small.cov, f.member >= 3 & (trait == 1))
   
   my.tab <- table(0.5*(small.cov$signal.father + small.cov$signal.mother) > small.cov$signal)  
   return (chisq.test(my.tab))

@@ -28,7 +28,7 @@ manu.CNVs <- function() {
     sex <- ped.file$sex[ my.match ]
     trait <- ped.file$t1d[ my.match ] - 1
     trait <- ifelse(is.na(trait) | trait < 0, 0, trait)
-    
+
     f.member <- NA
     f.member <- ifelse( fid == 0 & mid == 0 & sex == 1, 1, f.member)
     f.member <- ifelse( fid == 0 & mid == 0 & sex == 2, 2, f.member)
@@ -43,6 +43,8 @@ manu.CNVs <- function() {
                                          FID = FID,
                                          f.member = f.member,
                                          batch = rep('A', ncol(probe.data)))
+
+    
     test <- apply.pca(test)
     
     test <- fit(test, ncomp = 3, hyp = 'H0', EM.starting.point = 'kmeans')
@@ -110,3 +112,6 @@ basic.check <- function(niter = 1) {
   print(T)
 }
 #basic.check(10)
+
+
+#print(getMethod("apply.pca", signature = 'CNVtools'))

@@ -1,9 +1,12 @@
-library(survival)
 
-source('R/CNVtools_class.R')
-source('R/model_fitting.R')
-dyn.load('src/CNVtools.so')
 
+lib <- TRUE
+if (lib) {library(CNVtools)} else {
+  library(survival)      
+  source('R/CNVtools_class.R')
+  source('R/model_fitting.R')
+  dyn.load('src/CNVtools.so')
+}
 
 
 manu.CNVs <- function() {
@@ -12,7 +15,7 @@ manu.CNVs <- function() {
   
   pdf('test.pdf', width = 8, height = 4)
   par(mfrow = c(1, 2))
-  for (file in my.files[2]) {
+  for (file in my.files) {
     print(file)
     load(file)
     probe.data <- probe_dat_sub[, - (1:3)]
@@ -40,14 +43,15 @@ manu.CNVs <- function() {
                                          FID = FID,
                                          f.member = f.member,
                                          batch = rep('A', ncol(probe.data)))
-    
     test <- apply.pca(test)
     
-    test <- fit(test, ncomp = 3, hyp = 'H0', EM.starting.point = 'manual', start.mean = c(-2, 0.1, 1), start.var = rep(0.1, 3), start.alpha = c(0.1, 0.7, 0.2))
-    test <- fit(test, ncomp = 3, hyp = 'H1')
+    test <- fit(test, ncomp = 3, hyp = 'H0', EM.starting.point = 'kmeans')
+    test <- fit(test, ncomp = 3, hyp = 'H1', EM.starting.point = 'H1.from.H0')
     
     plot.cnv (test, col = 'red', breaks = 20, hyp = 'H0', main = paste(gsub(pattern = '.Rdata', replacement = '', basename(file)), 'H0'))
     plot.cnv (test, col = 'red', breaks = 20, hyp = 'H1', main = paste(gsub(pattern = '.Rdata', replacement = '', basename(file)), 'H1'))
+    title (paste('TDT test: ', signif(TDT(test)$p.value, 3)), outer = TRUE, line = -1)
+    print(TDT(test))
   }
   
   dev.off()
@@ -55,10 +59,10 @@ manu.CNVs <- function() {
   
   T <- 2*(test@mle.H1$lnL - test@mle.H0$lnL)
 
-  print(test@mle.H0$mean)
-  print(test@mle.H1$mean)
-  print(T)
-  print(test@mle.H0$mean)
+  #print(test@mle.H0$mean)
+  #print(test@mle.H1$mean)
+  #print(T)
+  #print(test@mle.H0$mean)
   return(test)
 }
 
@@ -72,21 +76,33 @@ test <- manu.CNVs()
 basic.check <- function(niter = 1) {
   #set.seed(seed = 0)
   if (file.exists('test.tab')) file.remove('test.tab')
-      
+
+  n <- 500
+  odds.ratio <- 1.3
+
+  
   for (i in 1:niter) {
-    n <- 200
-    trait <-  c(rep(0, n), rep(1, n))
+    X <- rbinom(size = 2, n = n, prob = 0.3)
+    nu <- log(odds.ratio)*X
+    prob <- exp(nu)/(1 + exp(nu))
+    trait <- rbinom(size = 1, n = n, prob = prob)
+
+    mod1 <- glm( trait ~ X, family = binomial)
+    mod0 <- glm( trait ~ 1, family = binomial)
+    dl <-     anova(mod0, mod1, test = 'Chisq')$Dev[2]
+
     test <- new('CNVtools',
                 trait = trait,
-                signal = rnorm(n = 2*n, sd = 0.3, mean = rbinom(size = 3, n = 2*n, prob = 0.5)),
-                batch = rep('A', 2*n))
+                model.association = '~ cn',
+                signal = X + rnorm(sd = 0.1, n = n),
+                batch = rep('A', n))
     
-    test <- fit(test, ncomp = 3, hyp = 'H0')
-    test <- fit(test, ncomp = 3, hyp = 'H1');
+    test <- fit(test, ncomp = 3, hyp = 'H0', EM.starting.point = 'manual', start.mean = c(0, 1, 2), start.var = rep(0.1^2, 3))
+    test <- fit(test, ncomp = 3, hyp = 'H1', EM.starting.point = 'H1.from.H0')
     T <- 2*(test@mle.H1$lnL - test@mle.H0$lnL)
     
-
-    cat(T, '\n', file = 'test.tab', append = TRUE )
+    cat(T, dl, '\n')
+    cat(T, dl, '\n', file = 'test.tab', append = TRUE )
   }
   print(test)
   print(test@mle.H0$mean)

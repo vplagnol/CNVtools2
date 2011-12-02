@@ -1,0 +1,124 @@
+
+compact.data.frame <- function (full.frame) 
+{   
+  full.frame <- full.frame[order(full.frame$cn),]
+  full.frame.mod <- do.call(rbind.data.frame, split(x = full.frame$posterior, f = full.frame$subject))
+  names(full.frame.mod) <- paste('P', c(1:(dim(full.frame.mod)[2])), sep='')       
+  full.frame.mod$cn <-apply(full.frame.mod, FUN=which.max, MAR=1)    
+  full.frame.mod$subject <- row.names(full.frame.mod)                              
+  full.frame <- subset( full.frame[ ,c('subject', 'batch', 'signal', 'trait')], full.frame$cn == 1)
+  full.frame <- merge(full.frame, full.frame.mod)        
+  return (full.frame)
+}
+
+
+getparams <- function(d)
+{
+  p <- list()
+  p[["ns"]] <- length( levels(d$batch) )
+  p[["nc"]] <- range(d$cn)[2]
+  p[["nind"]] <- dim(d)[1]/p[["nc"]]
+
+  maxLike <- tapply(d$pr, d$subject, max)  ##takes the max likelihood
+  p[["lnL"]] <- sum ( maxLike + log( tapply(exp(d$pr - maxLike[ d$subject]), FUN=sum, d$subject)) )
+  
+  p[["alpha"]] <- matrix(0,nrow=p$nc,ncol=p$ns)
+  p[["mean"]] <- matrix(0,nrow=p$nc,ncol=p$ns)
+  p[["var"]] <- matrix(0,nrow=p$nc,ncol=p$ns)
+  p[["nu"]] <- matrix(0,nrow=p$nc,ncol=p$ns)
+  p[["pdc"]] <- matrix(0,nrow=p$nc,ncol=p$ns)
+  
+  lev <- levels(d$batch)
+  for(j in 1:p$ns) {
+    for(i in 1:p$nc) {
+      p$mean[i,j] <- .Call("get_first_match", nrow(d), as.numeric(d$cn), as.numeric(d$batch), as.numeric(i), as.numeric(j), d$mean)
+      p$alpha[i,j] <- .Call("get_first_match", nrow(d), as.numeric(d$cn), as.numeric(d$batch), as.numeric(i), as.numeric(j), d$alpha)
+      p$var[i,j] <- .Call("get_first_match", nrow(d), as.numeric(d$cn), as.numeric(d$batch), as.numeric(i), as.numeric(j), d$var)
+      p$nu[i,j] <- .Call("get_first_match", nrow(d), as.numeric(d$cn), as.numeric(d$batch), as.numeric(i), as.numeric(j), d$nu)
+      p$pdc[i,j] <- .Call("get_first_match", nrow(d), as.numeric(d$cn), as.numeric(d$batch), as.numeric(i), as.numeric(j), d$pdc)
+    }	
+  }
+  return (p)
+}
+
+
+
+######################################################################### the workhorse function
+CNV.fitModel <- function(x,
+                         nind,
+                         hyp = "H0",
+                         pi.model = 0,
+			 mix.model = 10,
+			 control=list(tol=1e-5, max.iter = 3000, min.freq=4)) {
+  
+  pi.mod <- as.integer(pi.model)
+  mix.mod <- as.integer(mix.model)
+  logit.offset = rep(0, x@nsamples*x@ncomp)
+
+  
+  alpha.start <- rep(1/x@ncomp, x@ncomp)
+  mean.start <- quantile(x@signal, prob = (1:x@ncomp - 0.5)/x@ncomp)
+  var.start <- rep((sd(x@signal)/x@ncomp)^2, 3)
+
+  
+  clean.data <- data.frame(subject = rep(x@covariates$sample.names, 3),
+                           strata.association = x@strata.association,
+                           strata.mean = x@strata.mean,
+                           strata.var = x@strata.var,
+                           trait = rep(x@trait, x@ncomp),
+                           cn = x@expanded.covariates$cn,
+                           signal = rep(x@signal, 3),
+                           mean.start = mean.start[ x@expanded.covariates$cn ],
+                           alpha.start = alpha.start[ x@expanded.covariates$cn ],
+                           var.start = var.start[  x@expanded.covariates$cn ],
+                           nu.start = 3,
+                           batch = rep(x@covariates$batch) )
+
+###### Here we make sure that the numbering of the strata variance sense
+  initial <- sort(unique(clean.data$strata.association))
+  clean.data$strata.association <- as.integer(rank(initial)[ match (x = clean.data$strata.association, table = initial) ])
+
+  initial <- sort(unique(clean.data$strata.var))
+  clean.data$strata.var <- as.integer(rank(initial)[ match (x = clean.data$strata.var, table = initial) ])
+
+  initial <- sort(unique(clean.data$strata.mean))
+  clean.data$strata.mean <- as.integer(rank(initial)[ match (x = clean.data$strata.mean, table = initial) ])
+
+  if(mix.model < 10) {stop("Specification of mix.model incorrect\n")}
+  res <- .Call("C_fitmodel", 
+	       as.integer(x@ncomp), 
+               as.integer(x@nsamples), 
+	       hyp, 
+	       clean.data, 
+	       logit.offset,
+               as.matrix(x@design.matrix.mean[, -1]), 
+               as.matrix(x@design.matrix.var[,-1]), 
+               as.matrix(x@design.matrix.association[, -1]), 
+               control,
+               mix.mod,	
+               pi.mod)
+
+
+  
+  new.data <- res[[1]]
+  clean.data$posterior <- new.data[,1]
+  clean.data$mean <- new.data[,2]
+  clean.data$var <- new.data[,3]
+  clean.data$pr <- new.data[,4]
+  clean.data$alpha <- new.data[,5]
+  clean.data$pdc <- new.data[,6]
+  clean.data$nu <- new.data[,7]	
+
+  if (hyp == 'H0') {
+    x@best.fit.H0 <- compact.data.frame(clean.data)
+    x@mle.H0 <- getparams(clean.data)
+  }
+
+  if (hyp == 'H1') {
+    x@best.fit.H1 <- compact.data.frame(clean.data)
+    x@mle.H1 <- getparams(clean.data)
+  }
+  
+  return(x)
+}
+#####################################################################

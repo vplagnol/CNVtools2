@@ -1,5 +1,6 @@
 library(survival)
-source('R/model_fitting.R')
+
+
 
 
 setClass("CNVtools",
@@ -14,6 +15,8 @@ setClass("CNVtools",
                         f.member = 'numeric',
                         covariates = 'data.frame',
                         expanded.covariates = 'data.frame',  ## the matrix expanded for each copy number
+                        TDT.frame = 'data.frame',
+                        TDT.test = 'list',
                         multiprobe.signal = 'matrix',
                         cn.calls = "numeric",
                         model.association = "formula",
@@ -83,7 +86,7 @@ setMethod("initialize", "CNVtools", function(.Object,
   
   
   sd.signal <-  sd(.Object@signal)
-  if ( sd.signal > 0.3 ||   sd.signal < 1.5 ) {
+  if ( sd.signal < 0.3 ||   sd.signal > 1.5 ) {
     message('The standard deviation of the signal is quite different from 1. For numeric stability purpose it will be rescaled to sd = 1.')
     .Object@signal <- .Object@signal / sd.signal
   }
@@ -143,27 +146,43 @@ setMethod("show", "CNVtools", function(object) {
 
 
 #############################################################################
-setGeneric("TDT" ,function(.Object){standardGeneric("TDT")}) 
+setGeneric("TDT" ,function(.Object, binomial = FALSE){standardGeneric("TDT")}) 
 
-setMethod("TDT", "CNVtools", function(.Object) {  ##Intensity based TDT test
+setMethod("TDT", "CNVtools", function(.Object, binomial) {  ##Intensity based TDT test
 
-  small.cov <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member, status = .Object@trait)
-
+  .Object@TDT.frame <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member, status = .Object@trait)
+  my.sd <- sd(.Object@TDT.frame$signal)
   
-  fathers <- subset(small.cov[, c('FID', 'signal')], small.cov$f.member == 1)
+  fathers <- subset(.Object@TDT.frame[, c('FID', 'signal')], .Object@TDT.frame$f.member == 1)
   if (max(table(fathers$FID)) > 1) stop('There is a family with 2 or more fathers')
   names(fathers)[2] <- 'signal.father'
 
-  mothers <- subset(small.cov[, c('FID', 'signal')], small.cov$f.member == 2)
+  mothers <- subset(.Object@TDT.frame[, c('FID', 'signal')], .Object@TDT.frame$f.member == 2)
   names(mothers)[2] <- 'signal.mother'    
   if (max(table(mothers$FID)) > 1) stop('There is a family with 2 or more mothers')
   
-  small.cov <- merge( small.cov, fathers, by = 'FID', all.x = TRUE)
-  small.cov <- merge( small.cov, mothers, by = 'FID', all.x = TRUE)
-  small.cov <- subset(small.cov, f.member >= 3 & (trait == 1))
+  .Object@TDT.frame <- merge( .Object@TDT.frame, fathers, by = 'FID', all.x = TRUE)
+  .Object@TDT.frame <- merge( .Object@TDT.frame, mothers, by = 'FID', all.x = TRUE)
+  .Object@TDT.frame <- subset(.Object@TDT.frame, f.member >= 3 & (status == 1))
+  .Object@TDT.frame$U <- .Object@TDT.frame$signal - 0.5*(.Object@TDT.frame$signal.father + .Object@TDT.frame$signal.mother)
+  .Object@TDT.frame$V <- .Object@TDT.frame$U^2
   
-  my.tab <- table(0.5*(small.cov$signal.father + small.cov$signal.mother) > small.cov$signal)  
-  return (chisq.test(my.tab))
+  #.Object@TDT.frame$direction.signal <- ifelse ( abs(.Object@TDT.frame$diff.signal) >  threshold*my.sd,  .Object@TDT.frame$diff.signal > 0, NA)
+  
+
+
+  
+  if (binomial) {
+    my.tab <- table( .Object@TDT.frame$U > 0 )
+    my.test <- chisq.test(my.tab)
+    .Object@TDT.test <- list(statistic = my.test$statistic, p.value = my.test$p.value)
+  } else {
+    T <- sum(.Object@TDT.frame$U, na.rm = TRUE)^2/ sum(.Object@TDT.frame$V, na.rm = TRUE)
+    .Object@TDT.test <- list(statistic = T,
+                             p.value = pchisq(q = T, lower.tail = TRUE, df = 1))
+  }
+  
+  return (.Object)
 })
  
 

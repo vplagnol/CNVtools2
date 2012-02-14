@@ -2,6 +2,8 @@
 
 base  <- '/ugi/home/shared/vincent/libraries/R/working/CNVtools'
 
+
+system('rm /ugi/home/shared/vincent/libraries/R/working/CNVtools/R/*')
 package.skeleton(name="CNVtools",
                  code_files = c('R/CNVtools_class.R', 'R/model_fitting.R'),
                  path='/ugi/home/shared/vincent/libraries/R/working',
@@ -27,4 +29,4 @@ file.copy(from = 'doc/CNVtools.Rd', to = '/ugi/home/shared/vincent/libraries/R/w
 file.copy(from = 'doc/getparams.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/getparams.Rd', overwrite = TRUE)
 
 system("R CMD build /ugi/home/shared/vincent/libraries/R/working/CNVtools")
-system("R CMD INSTALL CNVtools_2.0.0.tar.gz")
+#system("R CMD INSTALL CNVtools_2.0.0.tar.gz")

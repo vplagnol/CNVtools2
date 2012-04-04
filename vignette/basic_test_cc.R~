@@ -1,0 +1,21 @@
+library(CNVtools) 
+#library(survival); source("CNVtools.r"); dyn.load("../src/CNVtools.so"); load("../../CNVtools/data/A112.RData")
+
+set.seed(10)
+n <- 1000
+CNV <- rbinom(size = 2, n = 1000, prob = 0.3)
+
+OR <- 1.2
+case.control <- rbinom(prob = -0.3 + exp(OR*CNV)/(1 +  exp(OR*CNV) ), n = n, size = 1)
+                       
+signal <- rnorm(n = n, mean = CNV, sd = 0.05)
+batches <- rep(0, n)
+
+fit <- CNVtest.binary ( signal = signal, 
+                       batch = batches, 
+                       disease.status = case.control, 
+                       ncomp = 3, 
+                       n.H0=1, 
+                       n.H1=1, 
+                       model.var = ' ~ 1', 
+                       model.disease ="~ cn")

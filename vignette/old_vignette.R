@@ -1,0 +1,193 @@
+
+
+
+\subsection{Dealing with a continuous covariate}
+
+\texttt{CNVtools} could in theory deal with continous variables. This feature has however not yet been implemented.
+A potential (even though not ideal) work around consists of discretizing the continous variable. Here is an example below of how this could be done.
+
+<<continuous>>=
+
+continuous.covariate <- rnorm(n = n)
+deciles <- as.numeric(quantile(continuous.covariate, seq (0, 1, 0.1)))
+discretized.covariate <- sapply (continuous.covariate, FUN = function(x) {sum( x > deciles)})
+
+fit <- CNVtest.binary ( signal = signal, 
+                       batch = batches, 
+                       disease.status = case.control, 
+                       association.test.strata = factor(discretized.covariate),
+                       ncomp = 3, 
+                       n.H0=1, 
+                       n.H1=1, 
+                       model.var = ' ~ 1', 
+                       model.disease ="~ cn")
+@ 
+
+This approach does a relatively good job at imitating the inclusion of the continuous covariate itself in the regression analysis.
+But extending the \texttt{CNVtools} code to potentially include continuous covariates should happen relatively soon.
+
+
+\section{Model selection using the Bayesian Information Criterion (BIC)}
+To determine the number of components of the CNV for the downstream analysis we can run the model selection algorithm. The models scanned by 
+this function can be specified by the user, however the default settings allow for  determining the number of components using some general models for the mean and variance of the components. We specify 3 iterations under H0 to increase the chances of locating a global maximum for each model. The output of the model selection gives the BIC (and AIC) for the different models. 
+The model that minimizes the chosen statistic is the most likely model. This is demonstrated in Figure \ref{model-select.fig}. 
+
+<<model.select>>=
+batches <- factor(A112$cohort)
+sample <- factor(A112$subject)
+set.seed(0)
+results <- CNVtest.select.model(signal=pca.signal, batch = batches, sample = sample, n.H0 = 3, method="BIC", v.ncomp = 1:5, v.model.component = rep('gaussian',5), v.model.mean = rep("~ strata(cn)",5), v.model.var = rep("~1", 5))
+ncomp <- results$selected
+pdf("fig/modelselect.pdf",width=5,height=5)
+plot(-results$BIC, xlab="n comp", ylab="-BIC", type="b", lty=2, col="red", pch = '+')
+dev.off()
+@
+
+\begin{figure}[!htb]
+  \begin{center}
+    \includegraphics[width=11cm]{fig/modelselect.pdf}
+  \end{center}
+  \caption{The BIC as a function of the number of components fit to the data output from the model selection stage. The most appropriate model is the one that minimises the BIC.}
+  \label{model-select.fig}
+\end{figure}
+
+\section{Assigning individuals to a copy number genotype}
+The output from the clustering under $\mathbb{H}_0$ can be used to obtain the posterior probabilities and MAP estimates of an individuals cluster membership. This can also be applied after the LDF improvement (see below). The columns P1, P2, P3 represent the posterior probability of belonging to component 1, 2, 3. The column labeled cn is the MAP assignment. 
+
+<<genotype.assignment>>=
+head(fit.pca$posterior.H0)
+@
+
+\section{Improving using the LDF procedure}
+It is now possible to use the posterior probabilities from the pca procedure to improve the fit.
+This is done by using a linear discriminant analysis.
+
+<<ldf.improve>>=
+ncomp <- 3
+pca.posterior <- as.matrix((fit.pca$posterior.H0)[, paste('P',seq(1:ncomp),sep='')])
+dimnames(pca.posterior)[[1]] <- (fit.pca$posterior.H0)$subject
+ldf.signal <- apply.ldf(raw.signal, pca.posterior)
+
+pdf("fig/ldf_pca_signal.pdf", width=10, height=5)
+par(mfrow=c(1,2))
+hist(pca.signal, breaks=50, main='First PCA signal', cex.lab=1.3)  
+hist(ldf.signal, breaks=50, main='LDF signal', cex.lab=1.3)  
+dev.off()
+@ 
+
+\begin{figure}[!htb]
+  \begin{center}
+    \includegraphics[width=11cm]{fig/ldf_pca_signal.pdf}
+  \end{center}
+  \caption{Comparing the LDF and PCA analysis, both clustered under the null hypothesis of no association.}
+  \label{ldf-pca.fig}
+\end{figure}
+
+The results of the LDF analysis can now be see in Figure \ref{ldf-pca.fig} and we can observe a clear improvement. The data will then be much easier to cluster.
+
+\section{Testing for genetic association with a dichotomous disease trait}
+
+\subsection{Some mathematical details}
+The association testing approach has been described previously (see reference below) but for completeness we sketch the principle.
+We use a likelihood ratio approach to test for association between the genotype calls and the case-control status. 
+Genotypes are called using a finite mixture model.
+Formally, this association test can be as summarized as jointly fitting two linear models:
+\begin{eqnarray}
+X & = &  \gamma + \theta^t Z + \epsilon \label{eqn1} \\
+logit(Y) & = &  \alpha + \beta X \label{eqn2}
+\end{eqnarray}
+
+The first model is the Gaussian or T mixture model, and the second model is a traditional generalized logit linear model. 
+Notations are:
+\begin{itemize}
+\item $X$ is a N-dimensional vector of signal intensities, where $N$ is the number of samples in the study.
+\item $Z$ is the $(N, G)$ matrix of genotype assignment, where $G$ designates the number of copy number classes: $Z_{i,j} = 1$ if and only if the sample $i$ has genotype $j$.
+Each row $z_i$ of $Z$ is sampled from a multinomial distribution with probabilities $(\Phi_i)_{i=1}^G$ representing the genotype frequencies in the sampled population.
+\item The error term $\epsilon$ is normally distributed with mean 0. 
+\item $\theta$ is a $G$ dimensional vector, linking the genotype status with the mean value of the signal intensity.
+\item $\alpha$ and $\beta$ are scalar and $\beta \neq 0$ under the alternative $\mathbb{H}_1$.
+Our default assumption is that the log-odds ratio is proportional to the genotype $X$.
+\item $Y$ is the $N$ dimensional binary vector describing the case-control status.
+\end{itemize}
+
+
+\subsection{Example}
+Now that we have summarised the intensity data in an efficient manner we can use it to test for genetic association between both cohorts.
+Here we have defined an artificial trait, 0 for NBS and 1 for 58C.
+We can specify the number of iterations under $\mathbb{H}_0$ and $\mathbb{H}_1$, and in that case we will use one iteration for each scenario because the data quality is sufficient and does not require multiple iterations to be fitted properly.
+
+<<test.association>>=
+ncomp <- 3
+trait <- ifelse( A112$cohort == '58C', 0, 1)
+fit.ldf <- CNVtest.binary ( signal = ldf.signal, sample = sample, batch = batches, disease.status = trait, ncomp = ncomp, n.H0=3, n.H1=1, model.var = "~cn")
+print(fit.ldf$status.H0)
+print(fit.ldf$status.H1)
+
+pdf("fig/ldf-fit.pdf", width=10, height=5)
+par(mfrow=c(1,2))
+cnv.plot(fit.ldf$posterior.H0, batch = '58C', main = 'Cohort 58C', breaks = 50, col = 'red')
+cnv.plot(fit.ldf$posterior.H0, batch = 'NBS', main = 'Cohort NBS', breaks = 50, col = 'red')
+dev.off()
+
+LR.statistic <- -2*(fit.ldf$model.H0$lnL - fit.ldf$model.H1$lnL)
+print(LR.statistic)
+@ 
+
+\begin{figure}[!htb]
+  \begin{center}
+    \includegraphics[width=11cm]{fig/ldf-fit.pdf}
+  \end{center}
+  \caption{Output of the clustering procedure using the LDF, under the null hypothesis $\mathbb{H}_0$ of no association.
+    The colored lines show the posterior probability for each of the three copy number classes. 
+    For clarity the scale for the posterior probabilities is not shown but the maximum is 1 and the three posterior probabilities always add up to 1.}
+  \label{ldf-fit.fig}
+\end{figure}
+
+If the fit is correct and there is indeed no association, this statistic should be distributed as $\chi^2$ with one degree of freedom. The fit can be checked in Figure \ref{ldf-fit.fig}.
+
+Note that the assumed disease model, under the alternate hypothesis $\mathbb{H}_1$, is a linear odds model, which means that the effect on the log-odds is proportional to the number of alleles. We might be interested in testing an allelic model, where the odds are not constrained by a linear trend. This is done by specifying the \texttt{model.disease} formula when fitting the data, as follows:
+
+<<test.association.allelic>>=
+fit.ldf <- CNVtest.binary ( signal = ldf.signal, sample = sample, batch = batches, disease.status = trait, ncomp = 3, n.H0=3, n.H1=1, model.disease = " ~ as.factor(cn)")
+print(fit.ldf$status.H0)
+print(fit.ldf$status.H1)
+LR.statistic <- -2*(fit.ldf$model.H0$lnL - fit.ldf$model.H1$lnL)
+print(LR.statistic)
+@ 
+
+The default for \texttt{model.disease} is $\sim \texttt{cn}$. Introducing the \texttt{factor} adds one degree of freedom, canceling the default linear constraint. The resulting statistic is now distributed, under the null, as $\chi^2$ with 2 degrees of freedom.
+
+
+
+\section{Testing for genetic association with a quantitative trait}
+Now consider the testing of association with a quantitative trait. The model now consists of a standard regression instead of a logistic regression. For this example we will generate a gaussian hypothetical trait and test for association with the combined NBS and 58C individuals. The association test is done in a completely analogous way, namely the LR under $\mathbb{H}_0$ should be distributed as $\chi^2$ with one degree of freedom assuming a linear trend model.
+
+<<test.association.qt>>=
+batches <- rep("ALL",length(sample))
+qt <- rnorm(length(sample), mean=9.0, sd=1.0)
+fit.ldf <- CNVtest.qt(signal = ldf.signal, sample = sample, batch = batches, qt = qt, ncomp = ncomp, n.H0=3, n.H1=1, model.var = "~strata(cn)")
+print(fit.ldf$status.H0)
+print(fit.ldf$status.H1)
+LR.statistic <- -2*(fit.ldf$model.H0$lnL - fit.ldf$model.H1$lnL)
+print(LR.statistic)
+pdf("fig/qt-fit.pdf", width=15, height=5)
+qt.plot(fit.ldf) 
+dev.off()
+@
+
+\begin{figure}[!htb]
+  \begin{center}
+    \includegraphics[width=16cm]{fig/qt-fit.pdf}
+  \end{center}
+  \caption{Output of the quantitative trait association procedure on the LDF transformed data.
+    For the rightmost graph the colored lines show the posterior probability for each of the three copy number classes.}
+  \label{qt-fit.fig}
+\end{figure}
+
+
+\section{Reference}
+The statistical ideas underlying this package have been published in:\\
+{\it A robust statistical method for case-control association testing with copy number variation}, Chris Barnes, Vincent Plagnol, Tomas Fitzgerald, Richard Redon, Jonathan Marchini, David G. Clayton, Matthew E. Hurles, Nature Genetics 2008
+
+
+\end{document}

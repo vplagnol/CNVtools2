@@ -16,7 +16,7 @@ setClass("CNVtools",
                         covariates = 'data.frame',
                         expanded.covariates = 'data.frame',  ## the matrix expanded for each copy number
                         TDT.frame = 'data.frame',
-                        TDT.test = 'htest',
+                        TDT.test = 'list',
                         multiprobe.signal = 'matrix',
                         cn.calls = "numeric",
                         model.association = "formula",
@@ -86,7 +86,7 @@ setMethod("initialize", "CNVtools", function(.Object,
   
   
   sd.signal <-  sd(.Object@signal)
-  if ( sd.signal > 0.3 ||   sd.signal < 1.5 ) {
+  if ( sd.signal < 0.3 ||   sd.signal > 1.5 ) {
     message('The standard deviation of the signal is quite different from 1. For numeric stability purpose it will be rescaled to sd = 1.')
     .Object@signal <- .Object@signal / sd.signal
   }
@@ -146,9 +146,9 @@ setMethod("show", "CNVtools", function(object) {
 
 
 #############################################################################
-setGeneric("TDT" ,function(.Object, threshold = 0){standardGeneric("TDT")}) 
+setGeneric("TDT" ,function(.Object, binomial = TRUE){standardGeneric("TDT")}) 
 
-setMethod("TDT", "CNVtools", function(.Object, threshold) {  ##Intensity based TDT test
+setMethod("TDT", "CNVtools", function(.Object, binomial ) {  ##Intensity based TDT test
 
   .Object@TDT.frame <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member, status = .Object@trait)
   my.sd <- sd(.Object@TDT.frame$signal)
@@ -164,20 +164,30 @@ setMethod("TDT", "CNVtools", function(.Object, threshold) {  ##Intensity based T
   .Object@TDT.frame <- merge( .Object@TDT.frame, fathers, by = 'FID', all.x = TRUE)
   .Object@TDT.frame <- merge( .Object@TDT.frame, mothers, by = 'FID', all.x = TRUE)
   .Object@TDT.frame <- subset(.Object@TDT.frame, f.member >= 3 & (status == 1))
-  .Object@TDT.frame$diff.signal <- .Object@TDT.frame$signal - 0.5*(.Object@TDT.frame$signal.father + .Object@TDT.frame$signal.mother)
+  .Object@TDT.frame$U <- .Object@TDT.frame$signal - 0.5*(.Object@TDT.frame$signal.father + .Object@TDT.frame$signal.mother)
+  .Object@TDT.frame$V <- .Object@TDT.frame$U^2
   
-  .Object@TDT.frame$direction.signal <- ifelse ( abs(.Object@TDT.frame$diff.signal) >  threshold*my.sd,  .Object@TDT.frame$diff.signal > 0, NA)
+  #.Object@TDT.frame$direction.signal <- ifelse ( abs(.Object@TDT.frame$diff.signal) >  threshold*my.sd,  .Object@TDT.frame$diff.signal > 0, NA)
   
-  my.tab <- table( .Object@TDT.frame$direction.signal > 0 )
-  .Object@TDT.test <- chisq.test(my.tab)
+
+
+  
+  if (binomial) {
+    my.tab <- table( .Object@TDT.frame$U > 0 )
+    my.test <- chisq.test(my.tab)
+    .Object@TDT.test <- list(statistic = my.test$statistic, p.value = my.test$p.value)
+  } else {
+    T <- sum(.Object@TDT.frame$U, na.rm = TRUE)^2/ sum(.Object@TDT.frame$V, na.rm = TRUE)
+    .Object@TDT.test <- list(statistic = T,
+                             p.value = pchisq(q = T, lower.tail = FALSE, df = 1))
+  }
   
   return (.Object)
 })
  
 
 #############################################################################
-setGeneric("apply.pca",function(.Object, multiprobe.signal = NULL){standardGeneric("apply.pca")}) 
-
+setGeneric("apply.pca",function(.Object, multiprobe.signal = NULL){standardGeneric("apply.pca")})
 setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
  
   if (!is.null(multiprobe.signal)) {
@@ -186,7 +196,7 @@ setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
     .Object@multiprobe.signal <- multiprobe.signal
   }
   
-  pca <- prcomp(.Object@multiprobe.signal, scale = TRUE)$x[,1]
+  pca <- prcomp(.Object@multiprobe.signal, scale = TRUE, center = TRUE)$x[,1]
   pca <- pca/sd(pca)
   if (cor(pca, .Object@signal) < 0) .Object@signal <- - pca else .Object@signal <- pca
 
@@ -199,43 +209,53 @@ setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
   return(.Object)
 })
 
-#############################################################################
-setGeneric("plot.cnv",function(.Object, hist.or.dens = "histogram", hyp = 'H0', batch = NULL, subset = NULL, freq = NULL, plot.outliers = FALSE, ... ){standardGeneric("plot.cnv")}) 
+###############################
 
-setMethod("plot.cnv", "CNVtools", function(.Object, hist.or.dens, hyp, batch, subset, freq, ...) {
 
-  if (!is.null(subset) && ( (length(subset) != .Object@nsamples) || class(subset) != 'logical')) stop('If specified, subset must be a logical vector of length equal to the number of samples')
+setGeneric("plot.cnv",function(.Object, hist.or.dens = "histogram", hyp = 'H0', freq = TRUE, plot.outliers = FALSE, subset, ...){standardGeneric("plot.cnv")}) 
+
+setMethod(f = "plot.cnv", signature ( .Object = "CNVtools", hist.or.dens = 'ANY', hyp = 'ANY',  freq = 'ANY', plot.outliers = 'ANY', subset = 'ANY'), function(.Object, hist.or.dens, hyp, freq, plot.outliers, subset, ...) { ####
+
+  if (!missing(subset)) {
+    if (! class(subset) %in% c('logical')) stop('The subset argument must be a logical vector')
+    if (length(subset) != .Object@nsamples) stop('If specified, subset must be a logical vector of length equal to the number of samples')
+  }
+
+  if (!missing(plot.outliers)) {
+    if (! class(plot.outliers) %in% c('logical')) stop('The plot.outliers argument must be a logical vector')
+  }
+
+    
   if (!hyp %in% c('H0', 'H1') || length(hyp) != 1) stop('The argument hyp must of of length 1 and equal to H0 or H1')
-  if (!is.null(batch) & !is.null(subset))  stop()
-  
-  
+  #if (!is.null(batch) & !is.null(subset))  stop()
+    
   if (hyp == 'H0') posterior <- .Object@best.fit.H0
   if (hyp == 'H1') posterior <- .Object@best.fit.H1
-  
-  if (!is.null(batch))  posterior <- posterior[posterior$batch %in% batch, ]
-  if (!is.null(subset))  posterior <- posterior[posterior$batch %in% batch, ]
-  
-  posterior <- .Object@best.fit.H0
-  
+
+  if (!missing(subset))  posterior <- posterior[subset, ]
+  #if (!is.null(batch))  posterior <- posterior[posterior$batch %in% batch, ]
+
   posterior <- posterior[order(posterior$signal), ]
   if (hist.or.dens == "density") {
     dens <- density(posterior$signal)
     plot(dens, ...)
     my.max <- max(dens$y)
   }
+  
   if (hist.or.dens == "histogram") {
     my.hist <- hist(posterior$signal, freq = freq, ...)
     my.max <- max(my.hist$counts)
-    if (!is.null(freq)) {if (freq == FALSE) my.max <- max(my.hist$density)}
+    if (freq == FALSE) my.max <- max(my.hist$density)
   }
-  
+
+
   col <- 1
   ncomp <- max(posterior$cn)
   for (i in c(1:.Object@ncomp)) {
     if (!plot.outliers) pr <- ifelse ( posterior$proba.not.outlier < 0.1, 0, posterior[, paste("P", i, sep = "")])
     if ( plot.outliers) pr <- posterior[, paste("P", i, sep = "")]
 
-    lines(posterior$signal, my.max*pr, type = "l", col = col)
+    lines(x = posterior$signal, y = my.max*pr, type = "l", col = col)
     col <- col + 2
   }
   

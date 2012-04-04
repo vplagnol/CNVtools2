@@ -7,13 +7,14 @@ setGeneric("fit", def = function(object,
                     hyp = 'H0',
                     EM.starting.point = 'kmeans',
                     gaussian.or.T = 'gaussian',
-                    model.association = NULL,
+                    model.association.H0 = NULL,
+                    model.association.H1 = NULL,
                     model.mean = NULL,
                     model.var = NULL,
                     start.mean = NULL,
                     start.var = NULL,
                     start.alpha = NULL,
-                    control = list(tol=1e-5, max.iter = 3000, min.freq=4),
+                    control = list(tol=1e-5, max.iter = 3000, min.freq=4, logP.outliers = 8),
                     force.replace = FALSE)
            standardGeneric('fit'))
 
@@ -73,19 +74,20 @@ setMethod("expand", "CNVtools", function(object) {
   ########################### Now build the design matrices for the clustering model
   model.mean <- object@model.mean
   model.var <- object@model.var
-  model.association <- object@model.association
+  model.association.H0 <- object@model.association.H0
+  model.association.H1 <- object@model.association.H1
   #object@design.matrix.association <- model.matrix(data = object@expanded.covariates, object = model.association)
   
   special <- c("strata")
     
-  for (design in c('var', 'mean', 'association')) {
+  for (design in c('var', 'mean', 'association.H0', 'association.H1')) {
     
     my.formula <- as.formula(get(paste('model', design, sep = '.')))
     Terms <- terms(my.formula, special, data= object@expanded.covariates)
     strats <- attr(Terms, "specials")$strata
     
     if (!is.null(strats)) {
-      if (design == 'association') stop('No strata term allowed in the association test')
+      if (design %in% c('association.H0', 'association.H1')) stop('No strata term allowed in the association test')
       m <- list()
       m[[1]] <- as.name("model.frame")
       m[[2]] <- Terms
@@ -110,7 +112,8 @@ setMethod("expand", "CNVtools", function(object) {
 
   object@design.matrix.mean <- design.matrix.mean
   object@design.matrix.var <- design.matrix.var
-  object@design.matrix.association <- design.matrix.association
+  object@design.matrix.association.H0 <- design.matrix.association.H0
+  object@design.matrix.association.H1 <- design.matrix.association.H1
 
   object@strata.mean <- strata.mean
   object@strata.var <- strata.var
@@ -125,7 +128,8 @@ setMethod("fit", "CNVtools", function(object,
                                       hyp,
                                       EM.starting.point,
                                       gaussian.or.T,
-                                      model.association,
+                                      model.association.H0,
+                                      model.association.H1,
                                       model.mean,
                                       model.var,
                                       start.mean,
@@ -149,15 +153,17 @@ setMethod("fit", "CNVtools", function(object,
     object@model.var <- model.var
   }
   
-  if (!is.null(model.association)) {
-    if (object@model.association != model.association) force.replace <- TRUE
-    object@model.association <- model.association
+  if (!is.null(model.association.H0)) {
+    if (object@model.association.H0 != model.association.H0) force.replace <- TRUE
+    object@model.association.H0 <- model.association.H0
+  }
+
+  if (!is.null(model.association.H1)) {
+    if (object@model.association.H1 != model.association.H1) force.replace <- TRUE
+    object@model.association.H1 <- model.association.H1
   }
   
   object <- expand(object)
-  
-  
-  
   
   
 ################# starting points
@@ -179,18 +185,18 @@ setMethod("fit", "CNVtools", function(object,
   if (basic) {
     start.mean <- quantile(x = object@signal, probes = (1:object@ncomp - 0.5)/object@ncomp)
     start.alpha <- rep(1/object@ncomp, object@ncomp)  
-    start.var <- rep((sd(object@signal)/object@ncomp)^2, 3)
+    start.var <- rep((sd(object@signal)/object@ncomp)^2, object@ncomp)
   }
   
   if (manual) {
     if (is.null(start.mean)) stop("Starting means must be provided")
     start.alpha <- rep(1/object@ncomp, object@ncomp)  
-    start.var <- rep((sd(object@signal)/object@ncomp)^2, 3)
+    start.var <- rep((sd(object@signal)/object@ncomp)^2, object@ncomp)
   }
 
   if (km.estimate) {
     message('Using k-means estimates as starting point of the EM algorithm')
-    km <- kmeans( object@signal, centers = object@ncomp, nstart = 3)
+    km <- kmeans( object@signal, centers = object@ncomp, nstart = 4)
     my.order <- order(km$centers)
     start.mean <- km$centers [ order(km$centers) ]
     start.var <- (km$withinss / km$size)[ order(km$centers) ]
@@ -203,12 +209,12 @@ setMethod("fit", "CNVtools", function(object,
     start.alpha <- as.numeric(object@mle.H0$alpha)
   }
 
-  clean.data <- data.frame(IID = rep(object@IID, 3),
+  clean.data <- data.frame(IID = rep(object@IID, object@ncomp),
                            strata.mean = object@strata.mean,
                            strata.var = object@strata.var,
                            trait = rep(object@trait, object@ncomp),
                            cn = object@expanded.covariates$cn,
-                           signal = rep(object@signal, 3),
+                           signal = rep(object@signal, object@ncomp),
                            mean.start = start.mean[ object@expanded.covariates$cn ],
                            alpha.start = start.alpha[ object@expanded.covariates$cn ],
                            var.start = start.var[  object@expanded.covariates$cn ],
@@ -223,19 +229,40 @@ setMethod("fit", "CNVtools", function(object,
   clean.data$strata.mean <- as.integer(rank(initial)[ match (x = clean.data$strata.mean, table = initial) ])
 
   if(mix.model < 10) {stop("Specification of mix.model incorrect\n")}
+
+
+  if (hyp == 'H0') {
+    res <- .Call("C_fitmodel", 
+                 as.integer(object@ncomp), 
+                 as.integer(object@nsamples), 
+                 hyp, 
+                 clean.data, 
+                 logit.offset,
+                 as.matrix(object@design.matrix.mean[, -1]), 
+                 as.matrix(object@design.matrix.var[,-1]), 
+                 as.matrix(object@design.matrix.association.H0), 
+                 control,
+                 mix.model,	
+                 pi.model)
+  }
+
   
-  res <- .Call("C_fitmodel", 
-	       as.integer(object@ncomp), 
-               as.integer(object@nsamples), 
-	       hyp, 
-	       clean.data, 
-	       logit.offset,
-               as.matrix(object@design.matrix.mean[, -1]), 
-               as.matrix(object@design.matrix.var[,-1]), 
-               as.matrix(object@design.matrix.association), 
-               control,
-               mix.model,	
-               pi.model)
+  if (hyp == 'H1') {
+    res <- .Call("C_fitmodel", 
+                 as.integer(object@ncomp), 
+                 as.integer(object@nsamples), 
+                 hyp, 
+                 clean.data, 
+                 logit.offset,
+                 as.matrix(object@design.matrix.mean[, -1]), 
+                 as.matrix(object@design.matrix.var[,-1]), 
+                 as.matrix(object@design.matrix.association.H1), 
+                 control,
+                 mix.model,	
+                 pi.model)
+  }
+
+  
 
   
   

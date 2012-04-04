@@ -14,7 +14,7 @@ static double tvalue;
 vector<double> CNV_signal::GetPosterior() const 
 {
   vector<double> ret;
-  ret.assign(length*7, 0.);
+  ret.assign(length*8, 0.);
 
   for (int i = 0; i != length; i++) {
     ret[ i + 0*length ] = posterior[i]; 
@@ -24,6 +24,7 @@ vector<double> CNV_signal::GetPosterior() const
     ret[ i + 4*length]  = alpha[i]; 
     ret[ i + 5*length]  = proba_disease[i]; 
     ret[ i + 6*length]  = nu[i];
+    ret[ i + 7*length]  = proba_not_outlier[i];
   }
 
   return ret;
@@ -64,7 +65,7 @@ void CNV_signal::MaximizeAlpha(const int& t)
   
   if(t==1){
     for (int i = 0; i != length; i++) {
-      alphas[ cohort[i] - 1 ][ cn[i] ] += posterior[i];
+      alphas[ cohort[i] - 1 ][ cn[i] ] += proba_not_outlier[ individual[i] ]*posterior[i];
     }
 
     vector<double> n(ncohorts,0.);
@@ -84,7 +85,7 @@ void CNV_signal::MaximizeAlpha(const int& t)
 
   if(t==2){
     for (int i = 0; i != length; i++) {
-      alphas[0][ cn[i] ] += posterior[i];
+      alphas[0][ cn[i] ] += proba_not_outlier[ individual[i] ]*posterior[i];
     }
     double sum = 0.; 
     for (int i = 0; i != ncomp; i++)  sum += alphas[0][i];
@@ -247,7 +248,7 @@ void CNV_signal::MaximizeVariancesG()
 
   
   for (int i = 0; i != length; i++)  { 
-    weights[i] = posterior[i];
+    weights[i] = proba_not_outlier[ individual[i] ]*posterior[i];
     residuals[i] = residuals[i]*residuals[i];
   }
   
@@ -291,8 +292,10 @@ void CNV_signal::MaximizeMeansG()
   //// output
   double scale;
   int df_resid, rank;
-
-  for (int i = 0; i != length; i++)   {weights[i] = posterior[i]/variance[i];}
+  
+  for (int i = 0; i != length; i++)   {
+    weights[i] = proba_not_outlier[ individual[i] ]*posterior[i]/variance[i];  //It perhaps makes sense that high var components get less reliable estimates of mean
+  }
 
   int failure;
   if (nstrat_mean == 1) {
@@ -302,8 +305,12 @@ void CNV_signal::MaximizeMeansG()
     failure = glm_fit(GAUSSIAN, IDENTITY, length, 0, nstrat_mean, signal,weights, NULL, X_mean, mean_strata,maxit,conv,init,  //input
 			  &rank,Xb, temp, residuals, newWeights, &scale,&df_resid);   //output, placed in "mean" in that case    
   }
-
-  if (failure == 0) {for (int i = 0; i != length; i++) mean[i] = temp[i];}
+  
+  if (failure == 0) {
+    for (int i = 0; i != length; i++) {
+      mean[i] = temp[i];
+    }
+  }
 }
 
 void CNV_signal::MaximizeVariancesPosteriorG(const int& t)
@@ -405,7 +412,10 @@ void CNV_signal::ComputePosterior ()
     
     max_logP[ i ] = -HUGE_VAL;
     for (int j = 0; j != ncomp; j++) max_logP[i] = max(max_logP[i], logp[ j*nind + i ]);
-    //if (max_logP[i] < -7) cout<<max_logP[i]<<"\t"<<signal[i]<<endl;
+    proba_not_outlier[ i ] = 1 - 1./ (1. + exp(max_logP[ i ] - logP_threshold));   //I am cutting corners here
+    proba_not_outlier[ i ] = max(proba_not_outlier[i], 0.001);
+    //if (proba_not_outlier[i] < 0.2) cout<<signal[i]<<endl;
+    
 
     for (int j = 0; j != ncomp; j++) {  //for each component
       if (logp[ j*nind + i ] == -HUGE_VAL) {posterior[ j*nind + i ] = 0.;} else {
@@ -413,11 +423,14 @@ void CNV_signal::ComputePosterior ()
 	double po = 1.;	
 	for (int k = 0; k < ncomp; k++) {if (k != j) po += exp(logp[ k * nind + i ] - logp[ j*nind + i ]);}  //compare with others
 	posterior[ j*nind + i ] = 1./po; 
+	
+	//cout<<1./po <<"\t"<<posterior[ j*nind + i ]<<endl;
+	//cout<<	posterior[ j*nind + i ] <<"\t"<<exp(logp[ j * nind + i ] -  max_logP[ i ] )<<endl;
+
 	if (posterior[ j*nind + i ] < 0.0001)   {posterior[ j*nind + i ] = 0.;}
 	if (1./po != 1./po) {
-	  cerr<<po<<" makes no sense\n";
+	  cerr<<posterior[ j*nind + i ]<<" makes no sense\n";
 	  for (int k = 0; k < ncomp; k++) {cout<<logp[ k * nind + i ]<<endl;}
-	  //for (int k = 0; k < ncomp; k++) cout<<variance[  k * nind + i ]<<"\t"<<mean[ k * nind + i ]<<"\t"<<signal[k * nind + i ]<<"\t"<<logp[i]<<"\t"<<posterior[i]<<endl;
 	  exit(1);
 	}
       }
@@ -452,7 +465,7 @@ void CNV_signal::ExpectationG()
      
       stringstream throwmessage; 
       throwmessage << "CNV_signal::Expectation : NaN in the likelihood computation : " 
-		   << i << "\t" << variance[i] << "\t" << alpha[i] << "  " << log(alpha[i]) << "  " << cn[i] << "\t" << proba_disease[i];
+		   << i << "\t" << variance[i] << "\t" << alpha[i] << "  " << log(alpha[i]) << "  " << cn[i] << "\t" << proba_disease[i]<<"\t"<<u<<endl;
        
       throw MyException(throwmessage.str().c_str(),1); 
     }
@@ -957,6 +970,7 @@ CNV_signal::CNV_signal(const int nind_a,
 		       const int designColDisease_a,
 		       MODEL m,
 		       HYPOTHESIS h,
+                       const double logP_threshold_a,
 		       const double min_n_a,
 		       const int * variance_strata_a,
 		       const int nstrat_var_a,
@@ -978,6 +992,7 @@ CNV_signal::CNV_signal(const int nind_a,
 			   designColDisease(designColDisease_a),
 			   model(m),
 			   hypothesis(h),
+                           logP_threshold( logP_threshold_a),
 			   min_n(min_n_a),
 			   variance_strata ( variance_strata_a ),
 			   nstrat_var (nstrat_var_a),
@@ -994,6 +1009,8 @@ CNV_signal::CNV_signal(const int nind_a,
   vector<double> def(ncomp, 0.0);
   //postLogit.assign(ncomp, 0);
   max_logP.assign(nind, 0.);
+  proba_not_outlier.assign(nind, 1.);
+  //logP_threshold = -8.;
 
   //for (int i = 0; i != nstrat_assoc; i++) {
   //  proba_d.push_back(def);
@@ -1009,6 +1026,7 @@ CNV_signal::CNV_signal(const int nind_a,
   }
 
   temp = new double [length];
+  individual = new int [ length ];
   mean = new double [length];
   variance = new double [length];
   nu = new double [length];
@@ -1029,6 +1047,7 @@ CNV_signal::CNV_signal(const int nind_a,
   for (int i = 0; i != ncomp; i++) {
     for (int j = 0; j != nind; j++) {
       cn[count] = i;
+      individual[ count ] = j;
       count++;
     }
   }

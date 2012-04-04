@@ -5,7 +5,7 @@ base  <- '/ugi/home/shared/vincent/libraries/R/working/CNVtools'
 
 system('rm /ugi/home/shared/vincent/libraries/R/working/CNVtools/R/*')
 package.skeleton(name="CNVtools",
-                 code_files = c('R/CNVtools_class.R', 'R/model_fitting.R'),
+                 code_files = c('R/CNVtools_class.R', 'R/model_fitting.R', 'R/tools.R'),
                  path='/ugi/home/shared/vincent/libraries/R/working',
                  force=TRUE)
 
@@ -27,6 +27,12 @@ file.copy(from = 'doc/validCNVtools.Rd', to = '/ugi/home/shared/vincent/librarie
 file.copy(from = 'doc/compact.data.frame.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/compact.data.frame.Rd', overwrite = TRUE)
 file.copy(from = 'doc/CNVtools.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/CNVtools.Rd', overwrite = TRUE)
 file.copy(from = 'doc/getparams.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/getparams.Rd', overwrite = TRUE)
+file.copy(from = 'doc/expand.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/expand.Rd', overwrite = TRUE)
+file.copy(from = 'doc/fit.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/fit.Rd', overwrite = TRUE)
+file.copy(from = 'doc/getQualityScore.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/getQualityScore.Rd', overwrite = TRUE)
+file.copy(from = 'doc/CNVtools-package.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/CNVtools-package.Rd', overwrite = TRUE)
+
+                                        #file.copy(from = 'doc/expand.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/expand.Rd', overwrite = TRUE)
 
 system("R CMD build /ugi/home/shared/vincent/libraries/R/working/CNVtools")
-#system("R CMD INSTALL CNVtools_2.0.0.tar.gz")
+system("R CMD INSTALL CNVtools_2.1.0.tar.gz")

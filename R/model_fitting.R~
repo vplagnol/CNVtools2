@@ -13,7 +13,7 @@ setGeneric("fit", def = function(object,
                     start.mean = NULL,
                     start.var = NULL,
                     start.alpha = NULL,
-                    control = list(tol=1e-5, max.iter = 3000, min.freq=4),
+                    control = list(tol=1e-5, max.iter = 3000, min.freq=4, logP.outliers = 8),
                     force.replace = FALSE)
            standardGeneric('fit'))
 
@@ -21,13 +21,13 @@ setGeneric("fit", def = function(object,
 
 #############################################################################
 compact.data.frame <- function (full.frame) 
-{   
+{
   full.frame <- full.frame[order(full.frame$cn),]
   full.frame.mod <- do.call(rbind.data.frame, split(x = full.frame$posterior, f = full.frame$IID))
   names(full.frame.mod) <- paste('P', c(1:(dim(full.frame.mod)[2])), sep='')       
   full.frame.mod$cn <-apply(full.frame.mod, FUN=which.max, MAR=1)    
   full.frame.mod$IID <- row.names(full.frame.mod)                              
-  full.frame <- subset( full.frame[ ,c('IID', 'batch', 'signal', 'trait')], full.frame$cn == 1)
+  full.frame <- subset( full.frame[ ,c('IID', 'batch', 'signal', 'trait', 'proba.not.outlier')], full.frame$cn == 1)
   full.frame <- merge(full.frame, full.frame.mod)        
   return (full.frame)
 }
@@ -114,7 +114,6 @@ setMethod("expand", "CNVtools", function(object) {
 
   object@strata.mean <- strata.mean
   object@strata.var <- strata.var
-  object@strata.association <- strata.var
 
   return (object)
 })
@@ -156,36 +155,42 @@ setMethod("fit", "CNVtools", function(object,
   }
   
   object <- expand(object)
-
-
   
-
-
-  ################# starting points
+  
+  
+  
+  
+################# starting points
   km.estimate <- FALSE
   manual <- FALSE
   basic <- FALSE
   H1.from.H0 <- FALSE
   
-  if (EM.starting.point == 'manual') manual <- TRUE  
-  if (is.null(start.mean)) {
-    km.estimate <- TRUE
-    manual <- FALSE
-  }  
-
+  if (EM.starting.point == 'basic') basic <- TRUE
+  if (EM.starting.point == 'kmeans') km.estimate <- TRUE
+  if (EM.starting.point == 'manual') manual <- TRUE
+  if (EM.starting.point == 'H1.from.H0') {
+    if ((hyp == 'H1') && (length(object@mle.H0) > 0)) H1.from.H0 <- TRUE
+    if ((hyp == 'H1') && (length(object@mle.H0) == 0)) {stop('You selected H1.from.H0 as a starting point but this CNVtools object does not seem to have a fitted H0')}
+    if (hyp == 'H0') {stop('The EM starting point H1.from.H0 only makes sense if the hypothesis is H1')}
+  }
+    
+#####
   if (basic) {
     start.mean <- quantile(x = object@signal, probes = (1:object@ncomp - 0.5)/object@ncomp)
     start.alpha <- rep(1/object@ncomp, object@ncomp)  
-    start.var <- rep((sd(object@signal)/object@ncomp)^2, 3)
+    start.var <- rep((sd(object@signal)/object@ncomp)^2, object@ncomp)
   }
   
   if (manual) {
-    ##do nothing, use user provided
+    if (is.null(start.mean)) stop("Starting means must be provided")
+    start.alpha <- rep(1/object@ncomp, object@ncomp)  
+    start.var <- rep((sd(object@signal)/object@ncomp)^2, object@ncomp)
   }
 
   if (km.estimate) {
     message('Using k-means estimates as starting point of the EM algorithm')
-    km <- kmeans( object@signal, centers = object@ncomp, nstart = 3)
+    km <- kmeans( object@signal, centers = object@ncomp, nstart = 4)
     my.order <- order(km$centers)
     start.mean <- km$centers [ order(km$centers) ]
     start.var <- (km$withinss / km$size)[ order(km$centers) ]
@@ -193,19 +198,17 @@ setMethod("fit", "CNVtools", function(object,
   }
 
   if (H1.from.H0) {
-
-
+    start.mean <- as.numeric(object@mle.H0$mean)
+    start.var <- as.numeric(object@mle.H0$var)
+    start.alpha <- as.numeric(object@mle.H0$alpha)
   }
 
-
-
-  clean.data <- data.frame(IID = rep(object@covariates$IID, 3),
-                           strata.association = object@strata.association,
+  clean.data <- data.frame(IID = rep(object@IID, object@ncomp),
                            strata.mean = object@strata.mean,
                            strata.var = object@strata.var,
                            trait = rep(object@trait, object@ncomp),
                            cn = object@expanded.covariates$cn,
-                           signal = rep(object@signal, 3),
+                           signal = rep(object@signal, object@ncomp),
                            mean.start = start.mean[ object@expanded.covariates$cn ],
                            alpha.start = start.alpha[ object@expanded.covariates$cn ],
                            var.start = start.var[  object@expanded.covariates$cn ],
@@ -213,9 +216,6 @@ setMethod("fit", "CNVtools", function(object,
                            batch = rep(object@covariates$batch) )
 
 ###### Here we make sure that the numbering of the strata variance sense
-  initial <- sort(unique(clean.data$strata.association))
-  clean.data$strata.association <- as.integer(rank(initial)[ match (x = clean.data$strata.association, table = initial) ])
-
   initial <- sort(unique(clean.data$strata.var))
   clean.data$strata.var <- as.integer(rank(initial)[ match (x = clean.data$strata.var, table = initial) ])
 
@@ -246,8 +246,10 @@ setMethod("fit", "CNVtools", function(object,
   clean.data$pr <- new.data[,4]
   clean.data$alpha <- new.data[,5]
   clean.data$pdc <- new.data[,6]
-  clean.data$nu <- new.data[,7]	
+  clean.data$nu <- new.data[,7]
+  clean.data$proba.not.outlier <- new.data[,8]	
 
+  
   my.params <-  getparams(clean.data)
   my.params[['convergence']] <- res[[2]]
   replace <- force.replace

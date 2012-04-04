@@ -64,6 +64,7 @@ class CNV_signal
   int designColMeans, designColVariances, designColDisease;
   MODEL model;
   HYPOTHESIS hypothesis;
+  double logP_threshold;
   double min_n;
   const int * variance_strata;
   int nstrat_var;
@@ -79,7 +80,7 @@ class CNV_signal
 
 
   vector<double> max_logP, proba_not_outlier; //for each individual stores the maximum logp
-  double logP_threshold;
+
   //vector<double> postLogit;
   //vector< vector<double> >  postLogit2, proba_d;
   
@@ -109,6 +110,7 @@ class CNV_signal
 	      const int designColDisease_a,
 	      MODEL m, 
 	      HYPOTHESIS h, 
+              const double logP_threshold_a, 
 	      const double min_n_a,
 	      const int * variance_strata_a,
 	      const int nstrat_var_a,

@@ -73,6 +73,7 @@ SEXP C_fitmodel (const SEXP ncomp_a,
   const double tol = *REAL(getListElement(control_parameters, "tol"));
   const double max_iter = *REAL(getListElement(control_parameters, "max.iter"));
   const double min_freq = *REAL(getListElement(control_parameters, "min.freq"));
+  const double logP_threshold = *REAL(getListElement(control_parameters, "logP.outliers"));
 
   const double * logit_offset_p = REAL(offset_logit);
   const double * mean_design = REAL(design_mean);
@@ -82,6 +83,7 @@ SEXP C_fitmodel (const SEXP ncomp_a,
   const int * variance_dims = INTEGER(getAttrib(design_variance, R_DimSymbol));
   const int * disease_dims = INTEGER(getAttrib(design_disease, R_DimSymbol));
 
+  //cout<<"disease dims "<<disease_dims[0]<<" "<<disease_dims[1]<<endl;
 
   const string test (CHAR ( STRING_ELT (hyp, 0)));
 
@@ -163,7 +165,7 @@ SEXP C_fitmodel (const SEXP ncomp_a,
 				      logit_offset_p,
 				      mean_design, var_design, disease_design, 
 				      mean_dims[1], variance_dims[1], disease_dims[1], 
-				      fit_model, h, min_freq, 
+				      fit_model, h, logP_threshold, min_freq, 
 				      strat_var, nstrat_var, strat_mean, nstrat_mean, strat_assoc, nstrat_assoc);
   
   string status;

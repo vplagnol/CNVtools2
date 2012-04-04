@@ -41,7 +41,8 @@ void CNV_signal::MaximizeAlpha()
   else if( model == DISEASE ){
     this->MaximizeAlpha(2); 
     //if ((nstrat_assoc > 1) || ( hypothesis == H1 )) this->MaximizeDisease();
-    if ( hypothesis == H1 ) this->MaximizeDisease();
+    //if ( hypothesis == H1 ) this->MaximizeDisease();    ////this is the key part that makes all the difference between H0 and H1 VP
+    this->MaximizeDisease();    ////this is the key part that makes all the difference between H0 and H1 VP
   }
   else if( model == QT ){
     this->MaximizeAlpha(2);
@@ -118,45 +119,14 @@ void CNV_signal::MaximizeDisease()
 
   if (hypothesis == H0) {
     failure = glm_fit(BINOMIAL, LOGIT, length, designColDisease, 1, disease_status, weights, NULL, X_disease, assoc_strata, maxit, conv, init,  //input
-		      &rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output
+		      &rank, Xb, temp, residuals, newWeights, &scale, &df_resid);   //output
   }
-
+  
   if (hypothesis == H1) {
     failure = glm_fit(BINOMIAL, LOGIT, length, designColDisease, 1, disease_status, weights, offset, X_disease, assoc_strata, maxit, conv, init,  //input
-		      &rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output
+		      &rank, Xb, temp, residuals, newWeights, &scale, &df_resid);   //output
     //    if (temp[0] != temp[0]) {cerr<<"temp "<<temp[0]<<"\t"<<posterior[0]<<"\t"<<posterior[1]<<"\t"<<posterior[2]<<endl; exit(1);}
   }
-
-  //double odd = 0; for  (int i = 0; i != 3000; i++)  {odd = odd + posterior[i];} cout<<"uuuuuuuuuuuuuu "<<hypothesis<<"\t"<<odd<<endl;
-  //for (int i = 0; i != 3000; i++) {cout<<designColDisease<<"\t"<<X_disease[i]<<"\t"<<temp[i]<<"\t"<<disease_status[i]<<"\t"<<posterior[i]<<endl;}
-
-
-  //if (nstrat_assoc == 1) {
-  //  
-  //  if (hypothesis == H1) {
-  //    failure = glm_fit(BINOMIAL, LOGIT, length, designColDisease, 1, disease_status, weights, offset, X_disease, assoc_strata, maxit, conv, init,  //input
-  //			&rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output
-  //}
-    
-  //  if (hypothesis == H0) {
-  //  cout<<"Should not go here\n", exit(1);
-  //  failure = glm_fit(BINOMIAL, LOGIT, length, 0, 1, disease_status, weights, NULL, X_disease, assoc_strata, maxit, conv, init,  //input
-  //			&rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output
-  //}
-  //
-  //} else {
-  //
-  //if (hypothesis == H1) {
-  //  failure = glm_fit(BINOMIAL, LOGIT, length, designColDisease, nstrat_assoc, disease_status, weights, offset, X_disease, assoc_strata, maxit, conv, init,  //input
-  //			&rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output    
-  //}
-  //
-  //if (hypothesis == H0) {
-  //  failure = glm_fit(BINOMIAL, LOGIT, length, 0, nstrat_assoc, disease_status, weights, NULL, X_disease, assoc_strata, maxit, conv, init,  //input. no offset for NULL
-  //			&rank, Xb, temp, residuals, newWeights, &scale,&df_resid);   //output    
-  //}
-  //
-  //}
 
   if (failure == 1) {
     Rprintf("MaximizeDisease : Failure to converge\n");
@@ -412,7 +382,7 @@ void CNV_signal::ComputePosterior ()
     
     max_logP[ i ] = -HUGE_VAL;
     for (int j = 0; j != ncomp; j++) max_logP[i] = max(max_logP[i], logp[ j*nind + i ]);
-    proba_not_outlier[ i ] = 1 - 1./ (1. + exp(max_logP[ i ] - logP_threshold));   //I am cutting corners here
+    proba_not_outlier[ i ] = 1 - 1./ (1. + exp(max_logP[ i ] + logP_threshold));   //I am cutting corners here
     proba_not_outlier[ i ] = max(proba_not_outlier[i], 0.001);
     //if (proba_not_outlier[i] < 0.2) cout<<signal[i]<<endl;
     
@@ -929,7 +899,7 @@ void CNV_signal::FillGaps()
       //postLogit[ cn[i] ] = posterior[i];
       //}
     
-    int s = assoc_strata[ i ] - 1;
+    //int s = assoc_strata[ i ] - 1;
     //if (posterior[i] > postLogit2[ s ][ cn[i] ]) {
     // if (proba_disease[i]  != proba_disease[i]) {cerr<<"Bug when computing disease probability "<<proba_disease[i]<<"\t"<<posterior[i]<<"\t"<<cn[i]<<"\t"<<s<<"\t"<<hypothesis<<endl; exit(1);}
       //if (proba_disease[i]  != proba_disease[i]) Rprintf("Bug when computing disease probability %f %f %d %d %d\n", proba_disease[i], posterior[i], cn[i], s, hypothesis);
@@ -970,6 +940,7 @@ CNV_signal::CNV_signal(const int nind_a,
 		       const int designColDisease_a,
 		       MODEL m,
 		       HYPOTHESIS h,
+                       const double logP_threshold_a,
 		       const double min_n_a,
 		       const int * variance_strata_a,
 		       const int nstrat_var_a,
@@ -991,6 +962,7 @@ CNV_signal::CNV_signal(const int nind_a,
 			   designColDisease(designColDisease_a),
 			   model(m),
 			   hypothesis(h),
+                           logP_threshold( logP_threshold_a),
 			   min_n(min_n_a),
 			   variance_strata ( variance_strata_a ),
 			   nstrat_var (nstrat_var_a),
@@ -1008,12 +980,6 @@ CNV_signal::CNV_signal(const int nind_a,
   //postLogit.assign(ncomp, 0);
   max_logP.assign(nind, 0.);
   proba_not_outlier.assign(nind, 1.);
-  logP_threshold = -8.;
-
-  //for (int i = 0; i != nstrat_assoc; i++) {
-  //  proba_d.push_back(def);
-  //  postLogit2.push_back(def);
-  //}
 
   for (int i = 0; i != ncohorts; i++) {
     variances.push_back(def);

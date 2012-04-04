@@ -19,10 +19,12 @@ setClass("CNVtools",
                         TDT.test = 'list',
                         multiprobe.signal = 'matrix',
                         cn.calls = "numeric",
-                        model.association = "formula",
+                        model.association.H0 = "formula",
+                        model.association.H1 = "formula",
                         model.mean = "formula",
                         model.var = "formula",
-                        design.matrix.association = 'matrix',
+                        design.matrix.association.H0 = 'matrix',
+                        design.matrix.association.H1 = 'matrix',
                         design.matrix.mean = 'matrix',
                         design.matrix.var = 'matrix',
                         strata.mean = 'integer',
@@ -52,7 +54,8 @@ setMethod("initialize", "CNVtools", function(.Object,
                                              signal,
                                              trait,
                                              batch,
-                                             model.association = formula(' ~ cn'),
+                                             model.association.H0 = formula(' ~ 1'),
+                                             model.association.H1 = formula(' ~ cn'),
                                              model.mean = formula ('~ strata(cn)'),
                                              model.var = formula ('~ strata(cn)'),
                                              IID = NULL,
@@ -61,16 +64,19 @@ setMethod("initialize", "CNVtools", function(.Object,
                                              covariates = data.frame()) {
 
   .Object@nsamples = length(signal)
-  
+
+  if (missing(batch)) batch <- rep('A',  .Object@nsamples)
   if (is.numeric(batch)) batch <- factor(as.character(batch))
   if (is.character(batch)) batch <- factor(batch)
 
   
-  if (is.character(model.association)) model.association <- as.formula(model.association)
+  if (is.character(model.association.H0)) model.association <- as.formula(model.association.H0)
+  if (is.character(model.association.H1)) model.association <- as.formula(model.association.H1)
   if (is.character(model.mean)) model.mean <- as.formula(model.mean)
   if (is.character(model.var)) model.var <- as.formula(model.var)
   
-  .Object@model.association <- model.association
+  .Object@model.association.H0 <- model.association.H0
+  .Object@model.association.H1 <- model.association.H1
   .Object@model.mean <- model.mean
   .Object@model.var <- model.var
 
@@ -133,7 +139,8 @@ setMethod("show", "CNVtools", function(object) {
   print(object@model.var, showEnv = FALSE)
 
   message('Model for the association')  
-  print(object@model.association, showEnv = FALSE)
+  print(object@model.association.H0, showEnv = FALSE)
+  print(object@model.association.H1, showEnv = FALSE)
 
   if (object@binary.trait) {
     message('Binary trait, here is the case control distribution per batch.')
@@ -146,9 +153,9 @@ setMethod("show", "CNVtools", function(object) {
 
 
 #############################################################################
-setGeneric("TDT" ,function(.Object, binomial = FALSE){standardGeneric("TDT")}) 
+setGeneric("TDT" ,function(.Object, binomial = TRUE){standardGeneric("TDT")}) 
 
-setMethod("TDT", "CNVtools", function(.Object, binomial) {  ##Intensity based TDT test
+setMethod("TDT", "CNVtools", function(.Object, binomial ) {  ##Intensity based TDT test
 
   .Object@TDT.frame <- data.frame ( signal = .Object@signal, FID = .Object@FID, f.member = .Object@f.member, status = .Object@trait)
   my.sd <- sd(.Object@TDT.frame$signal)
@@ -179,7 +186,7 @@ setMethod("TDT", "CNVtools", function(.Object, binomial) {  ##Intensity based TD
   } else {
     T <- sum(.Object@TDT.frame$U, na.rm = TRUE)^2/ sum(.Object@TDT.frame$V, na.rm = TRUE)
     .Object@TDT.test <- list(statistic = T,
-                             p.value = pchisq(q = T, lower.tail = TRUE, df = 1))
+                             p.value = pchisq(q = T, lower.tail = FALSE, df = 1))
   }
   
   return (.Object)
@@ -187,8 +194,7 @@ setMethod("TDT", "CNVtools", function(.Object, binomial) {  ##Intensity based TD
  
 
 #############################################################################
-setGeneric("apply.pca",function(.Object, multiprobe.signal = NULL){standardGeneric("apply.pca")}) 
-
+setGeneric("apply.pca",function(.Object, multiprobe.signal = NULL){standardGeneric("apply.pca")})
 setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
  
   if (!is.null(multiprobe.signal)) {
@@ -197,7 +203,7 @@ setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
     .Object@multiprobe.signal <- multiprobe.signal
   }
   
-  pca <- prcomp(.Object@multiprobe.signal, scale = TRUE)$x[,1]
+  pca <- prcomp(.Object@multiprobe.signal, scale = TRUE, center = TRUE)$x[,1]
   pca <- pca/sd(pca)
   if (cor(pca, .Object@signal) < 0) .Object@signal <- - pca else .Object@signal <- pca
 
@@ -210,43 +216,53 @@ setMethod("apply.pca", "CNVtools", function(.Object, multiprobe.signal) {
   return(.Object)
 })
 
-#############################################################################
-setGeneric("plot.cnv",function(.Object, hist.or.dens = "histogram", hyp = 'H0', batch = NULL, subset = NULL, freq = NULL, plot.outliers = FALSE, ... ){standardGeneric("plot.cnv")}) 
+###############################
 
-setMethod("plot.cnv", "CNVtools", function(.Object, hist.or.dens, hyp, batch, subset, freq, ...) {
 
-  if (!is.null(subset) && ( (length(subset) != .Object@nsamples) || class(subset) != 'logical')) stop('If specified, subset must be a logical vector of length equal to the number of samples')
+setGeneric("plot.cnv",function(.Object, hist.or.dens = "histogram", hyp = 'H0', freq = TRUE, plot.outliers = FALSE, subset, ...){standardGeneric("plot.cnv")}) 
+
+setMethod(f = "plot.cnv", signature ( .Object = "CNVtools", hist.or.dens = 'ANY', hyp = 'ANY',  freq = 'ANY', plot.outliers = 'ANY', subset = 'ANY'), function(.Object, hist.or.dens, hyp, freq, plot.outliers, subset, ...) { ####
+
+  if (!missing(subset)) {
+    if (! class(subset) %in% c('logical')) stop('The subset argument must be a logical vector')
+    if (length(subset) != .Object@nsamples) stop('If specified, subset must be a logical vector of length equal to the number of samples')
+  }
+
+  if (!missing(plot.outliers)) {
+    if (! class(plot.outliers) %in% c('logical')) stop('The plot.outliers argument must be a logical vector')
+  }
+
+    
   if (!hyp %in% c('H0', 'H1') || length(hyp) != 1) stop('The argument hyp must of of length 1 and equal to H0 or H1')
-  if (!is.null(batch) & !is.null(subset))  stop()
-  
-  
+  #if (!is.null(batch) & !is.null(subset))  stop()
+    
   if (hyp == 'H0') posterior <- .Object@best.fit.H0
   if (hyp == 'H1') posterior <- .Object@best.fit.H1
-  
-  if (!is.null(batch))  posterior <- posterior[posterior$batch %in% batch, ]
-  if (!is.null(subset))  posterior <- posterior[posterior$batch %in% batch, ]
-  
-  posterior <- .Object@best.fit.H0
-  
+
+  if (!missing(subset))  posterior <- posterior[subset, ]
+  #if (!is.null(batch))  posterior <- posterior[posterior$batch %in% batch, ]
+
   posterior <- posterior[order(posterior$signal), ]
   if (hist.or.dens == "density") {
     dens <- density(posterior$signal)
     plot(dens, ...)
     my.max <- max(dens$y)
   }
+  
   if (hist.or.dens == "histogram") {
     my.hist <- hist(posterior$signal, freq = freq, ...)
     my.max <- max(my.hist$counts)
-    if (!is.null(freq)) {if (freq == FALSE) my.max <- max(my.hist$density)}
+    if (freq == FALSE) my.max <- max(my.hist$density)
   }
-  
+
+
   col <- 1
   ncomp <- max(posterior$cn)
   for (i in c(1:.Object@ncomp)) {
     if (!plot.outliers) pr <- ifelse ( posterior$proba.not.outlier < 0.1, 0, posterior[, paste("P", i, sep = "")])
     if ( plot.outliers) pr <- posterior[, paste("P", i, sep = "")]
 
-    lines(posterior$signal, my.max*pr, type = "l", col = col)
+    lines(x = posterior$signal, y = my.max*pr, type = "l", col = col)
     col <- col + 2
   }
   
@@ -261,7 +277,8 @@ CNVtools.multivariate.signal <- function (multivariate.signal,
                                           batch,
                                           model.mean = formula ('~ strata(cn)'),
                                           model.var = formula ('~  strata(cn)'),
-                                          model.association = formula ('~  cn'),
+                                          model.association.H0 = formula ('~  1'),
+                                          model.association.H1 = formula ('~  cn'),
                                           IID = NULL,
                                           FID = NULL,
                                           f.member = NULL,
@@ -279,7 +296,9 @@ CNVtools.multivariate.signal <- function (multivariate.signal,
              f.member = f.member,
              model.mean = model.mean,
              model.var = model.var,
-             model.association = model.association)
+             model.association.H0 = model.association.H0,
+             model.association.H1 = model.association.H1)
+
   
   res@multiprobe.signal <- multivariate.signal
   return(res)

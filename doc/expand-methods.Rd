@@ -2,7 +2,7 @@
 \docType{methods}
 \alias{expand-methods}
 \alias{expand,CNVtools-method}
-\title{ ~~ Methods for Function \code{expand}  ~~}
+\title{ Expand function}
 \description{
  ~~ Methods for function \code{expand}  ~~
 }

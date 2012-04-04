@@ -14,9 +14,16 @@ for (folder in c('data', 'src', 'inst', 'inst/doc', 'inst/doc/fig')) {
   if (!file.exists(my.folder)) dir.create(path = my.folder)
 }
 
+data <- read.table("data/A112.dat", header=TRUE)
+A112 <- subset(data, data$cohort %in% c('58C', 'NBS'))
+save(list = 'A112', file="/ugi/home/shared/vincent/libraries/R/working/CNVtools/data/A112.RData")
+
+
 system(paste("cp src/*.cpp src/*.c src/*.h ", base, '/src', sep = ''))
 file.copy(from = 'doc/NAMESPACE', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/NAMESPACE', overwrite = TRUE)
 file.copy(from = 'doc/DESCRIPTION', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/DESCRIPTION', overwrite = TRUE)
+
+
 
 
 file.copy(from = 'doc/CNVtools.multivariate.signal.Rd', to = '/ugi/home/shared/vincent/libraries/R/working/CNVtools/man/CNVtools.multivariate.signal.Rd', overwrite = TRUE)

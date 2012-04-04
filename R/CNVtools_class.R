@@ -285,6 +285,7 @@ CNVtools.multivariate.signal <- function (multivariate.signal,
                                           covariates = data.frame()) {
 
   if(class(multivariate.signal) != 'matrix') stop('Multivariate input signal must be a matrix')
+  if (missing(batch)) batch <- rep('A', nrow(multivariate.signal))
   
   mean.signal <-  apply(multivariate.signal, MAR = 1, FUN = mean, na.rm = TRUE)
   res <- new('CNVtools',

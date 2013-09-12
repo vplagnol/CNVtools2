@@ -5,7 +5,7 @@
 
 %\VignetteIndexEntry{Using ExomeDepth}
 
-\title{CNVtools2}
+\title{CNVtools2-Family data vignette}
 \author{Vincent Plagnol}
 \date{\today}
 
@@ -19,11 +19,10 @@
 
 <<load.data>>=
 library(CNVtools) 
-source('R/CNVtools_class.R')
-
-print('sdkjfhksdhfksd')
-
-load('examples/log_ratio/chr1/CNVR397.1.Rdata')
+#source('R/CNVtools_class.R')
+#dyn.load('src/CNVtools.so')
+#load('examples/log_ratio/chr1/CNVR397.1.Rdata')
+data(CNVR397)
 ped.file <- read.table('examples/annotation_files/Vanguard.987Samples.PEDFILE.txt', header = TRUE, sep = '\t')
 
 probe.data <- probe_dat_sub[, - (1:3)]
@@ -65,7 +64,7 @@ test <- CNVtools.multivariate.signal(IID = names(probe.data),
 Now cluster the data
 <<cluster>>=
 test <- apply.pca(test)    
-test@signal[50] <- 10
+#test@signal[50] <- 10
 test <- fit(test, ncomp = 3, hyp = 'H0', EM.starting.point = 'kmeans')
 @ 
 

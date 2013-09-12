@@ -880,6 +880,9 @@ void CNV_signal::FillGaps()
     }
   }
 
+
+
+
   //for(int i = 0; i != nstrat_assoc; ++i){
   //  for(int j = 0; j != ncomp; ++j){
   //    postLogit2[ i ][ j ]  = -0.1;
@@ -1073,27 +1076,6 @@ CNV_signal::CNV_signal(const int nind_a,
   scale = dvar/(ncomp*ncomp);
   shrinkage = 0.01;
   dof = 3;
-
-  //Rprintf("\n**** Instantiated new CNV model ***\n");
-  //Rprintf("N components   : %d \n", ncomp);
-  //Rprintf("N individuals  : %d \n", nind);
-  //Rprintf("N cohorts      : %d \n", ncohorts);
-
-  //Rprintf("\n**** Fit parameters ***************\n");
-  //Rprintf("col mean : %d , col var : %d \n\n\n", designColMeans, designColVariances );
-  
-  //Rprintf("Mean design matrix\n");
-  //for(int i=0; i<length; ++i){
-  //Rprintf("%d",i);
-  //for(int j=0; j<designColMeans; ++j){
-  //  Rprintf("\t %4.2f",X_mean[i + j*length]);
-  //}
-  //Rprintf("\n");
-  //}
-
-  //Rprintf("\n**** Prior parameters ************\n");
-  //Rprintf("data mean : %4.4f \ndata var : %4.4f\n",mean_p,dvar);
-  //Rprintf(" mean_p : %4.4f \n scale : %4.4f \n shrinkage : %4.4f \n dof : %4.2f \n\n\n", mean_p, scale, shrinkage, dof);
 
 }
 

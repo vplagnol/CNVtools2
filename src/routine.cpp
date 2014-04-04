@@ -91,13 +91,11 @@ SEXP C_fitmodel (const SEXP ncomp_a,
   const int ncomp = *INTEGER(ncomp_a);
   const int nind  = *INTEGER(nind_a);
 
-  
   //const int * strat_assoc = INTEGER(getListElement(data, "strata.association"));
   const int * strat_assoc = NULL;
   const int * strat_var = INTEGER(getListElement(data, "strata.var"));
   const int * strat_mean = INTEGER(getListElement(data, "strata.mean"));
   const int * cohort = INTEGER(getListElement(data, "batch"));
-
  
   const double * alpha_start = REAL(getListElement(data, "alpha.start"));
   const double * disease = REAL(getListElement(data, "trait"));
@@ -105,10 +103,6 @@ SEXP C_fitmodel (const SEXP ncomp_a,
   const double * nu_start = REAL(getListElement(data, "nu.start"));
   const double * mean_start = REAL(getListElement(data, "mean.start"));
   const double * var_start = REAL(getListElement(data, "var.start"));
-
-
-
-
   
   int nstrat_var = 0;
   vector<int> array_strat_var (500, 0);

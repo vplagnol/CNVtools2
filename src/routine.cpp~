@@ -83,6 +83,7 @@ SEXP C_fitmodel (const SEXP ncomp_a,
   const int * variance_dims = INTEGER(getAttrib(design_variance, R_DimSymbol));
   const int * disease_dims = INTEGER(getAttrib(design_disease, R_DimSymbol));
 
+  //cout<<"disease dims "<<disease_dims[0]<<" "<<disease_dims[1]<<endl;
 
   const string test (CHAR ( STRING_ELT (hyp, 0)));
 

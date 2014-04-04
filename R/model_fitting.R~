@@ -14,7 +14,7 @@ setGeneric("fit", def = function(object,
                     start.mean = NULL,
                     start.var = NULL,
                     start.alpha = NULL,
-                    control = list(tol=1e-5, max.iter = 3000, min.freq=4, logP.outliers = 8),
+                    control = list(tol = 1e-5, max.iter = 500, min.freq = 4, logP.outliers = 8, nstart.kmeans = 40),
                     force.replace = FALSE)
            standardGeneric('fit'))
 
@@ -138,8 +138,7 @@ setMethod("fit", "CNVtools", function(object,
                                       control,
                                       force.replace) {
   message('Fitting under ', hyp)
-  print(control)
-  
+
   object@ncomp <- ncomp
   pi.model <- as.integer(0)
   mix.model <- as.integer(10)
@@ -197,14 +196,14 @@ setMethod("fit", "CNVtools", function(object,
   }
 
   if (km.estimate) {
-    message('Using k-means estimates as starting point of the EM algorithm')
-    km <- kmeans( object@signal, centers = object@ncomp, nstart = 4)
+    nstart <- ifelse ( 'nstart.kmeans' %in% names(control), control$nstart.kmeans, 40)
+    message('Using k-means estimates as starting point of the EM algorithm, using ', nstart, ' starting points')
+    km <- kmeans( object@signal, centers = object@ncomp, nstart = nstart)
     my.order <- order(km$centers)
     start.mean <- km$centers [ order(km$centers) ]
-    start.mean[1] <- -6  ##VP
-    ##print(start.mean); stop()
     start.var <- (km$withinss / km$size)[ order(km$centers) ]
     start.alpha <- (km$size / sum(km$size))[ order(km$centers) ]
+    message('Done with k-means')
   }
 
   if (H1.from.H0) {

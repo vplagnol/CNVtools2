@@ -393,8 +393,8 @@ setMethod("FamilyTest", "CNVtools", function(.Object, type, chromosome ) {  ##In
 
       T.male <- sum(male$U, na.rm = TRUE)^2 / sum(male$V, na.rm = TRUE)
       T.female <- sum(female$U, na.rm = TRUE)^2 / sum(female$V, na.rm = TRUE)
-      T <- (sum(male$U, na.rm = TRUE) + sum(female$U, na.rm = TRUE))^2/(sum(male$V, na.rm = TRUE) + sum(female$V, na.rm = TRUE))
-
+      #T <- (sum(male$U, na.rm = TRUE) + sum(female$U, na.rm = TRUE))^2/(sum(male$V, na.rm = TRUE) + sum(female$V, na.rm = TRUE))
+      T <- T.female
           
     .Object@family.test <- list(statistic = T,
                              p.value = pchisq(q = T, lower.tail = FALSE, df = 1),
